@@ -1,0 +1,13 @@
+.select-area-translater-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  cursor: crosshair;
+}
+
+.select-area-translater-box {
+  position: fixed;
+  border: 1px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  pointer-events: none;
+}

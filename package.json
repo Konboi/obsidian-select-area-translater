@@ -1,0 +1,24 @@
+{
+  "name": "obsidian-select-area-translater",
+  "version": "0.1.0",
+  "description": "Obsidian plugin to translate selected text or dragged editor regions via a configurable endpoint.",
+  "main": "main.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs --watch"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "translation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "esbuild": "^0.20.2",
+    "obsidian": "^1.5.12",
+    "tslib": "^2.6.2",
+    "typescript": "^5.4.3"
+  }
+}
