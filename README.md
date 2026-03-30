@@ -8,6 +8,7 @@ Obsidian plugin for translating selected text through a configurable HTTP endpoi
 - Send the selected text plus a prompt to a configurable endpoint
 - Insert the translated result directly under the selected content
 - Configure presets for local LLM APIs such as Ollama and OpenAI-compatible servers
+- Load selectable models directly from the configured API
 
 ## Current Scope
 
@@ -42,19 +43,16 @@ You can run them from the command palette.
 
 - `Endpoint URL`: HTTP endpoint for translation requests
 - `HTTP method`: usually `POST`
-- `Model`: value available as `{{model}}` in the request template
+- `API format`: `OpenAI-compatible` or `Ollama`
+- `Model`: load available models from the API or enter one manually
 - `Prompt`: instruction sent along with the selected text
 - `Headers JSON`: request headers as JSON
-- `Body template`: request body template with placeholders
-- `Response path`: dot path used to extract translated text from JSON responses
 
-### Template Variables
+### Model Loading
 
-The `Body template` supports these placeholders:
-
-- `{{model}}`
-- `{{prompt}}`
-- `{{text}}`
+- `OpenAI-compatible` format loads models from `/v1/models`
+- `Ollama` format loads models from `/api/tags`
+- Use the `Refresh` button in plugin settings to fetch the current model list
 
 ## Presets
 
@@ -65,14 +63,14 @@ Use the `Use Ollama` preset in plugin settings.
 Default values:
 
 - Endpoint: `http://127.0.0.1:11434/api/generate`
-- Response path: `response`
+- Response field: `response`
 
 Request body:
 
 ```json
 {
-  "model": "{{model}}",
-  "prompt": "{{prompt}}\n\n{{text}}",
+  "model": "selected-model",
+  "prompt": "your prompt\n\nselected text",
   "stream": false
 }
 ```
@@ -84,21 +82,21 @@ Use the `Use OpenAI-compatible` preset in plugin settings.
 Default values:
 
 - Endpoint: `http://127.0.0.1:1234/v1/chat/completions`
-- Response path: `choices.0.message.content`
+- Response field: `choices[0].message.content`
 
 Request body:
 
 ```json
 {
-  "model": "{{model}}",
+  "model": "selected-model",
   "messages": [
     {
       "role": "system",
-      "content": "{{prompt}}"
+      "content": "your prompt"
     },
     {
       "role": "user",
-      "content": "{{text}}"
+      "content": "selected text"
     }
   ],
   "temperature": 0.2

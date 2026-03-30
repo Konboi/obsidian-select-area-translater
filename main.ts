@@ -8,19 +8,22 @@ import {
   Setting,
 } from "obsidian";
 
+type ApiFormat = "openai-chat-completions" | "ollama-generate";
+type PresetName = "ollama" | "openai-compatible";
+
 interface SelectAreaTranslaterSettings {
   endpoint: string;
   method: string;
+  apiFormat: ApiFormat;
   model: string;
   prompt: string;
   headers: string;
-  bodyTemplate: string;
-  responsePath: string;
 }
 
 const DEFAULT_SETTINGS: SelectAreaTranslaterSettings = {
   endpoint: "",
   method: "POST",
+  apiFormat: "openai-chat-completions",
   model: "",
   prompt:
     "次の日本語テキストを自然な英語に翻訳してください。訳文だけを返してください。",
@@ -31,21 +34,11 @@ const DEFAULT_SETTINGS: SelectAreaTranslaterSettings = {
     null,
     2,
   ),
-  bodyTemplate: JSON.stringify(
-    {
-      prompt: "{{prompt}}",
-      text: "{{text}}",
-    },
-    null,
-    2,
-  ),
-  responsePath: "text",
 };
-
-type PresetName = "ollama" | "openai-compatible";
 
 export default class SelectAreaTranslaterPlugin extends Plugin {
   settings!: SelectAreaTranslaterSettings;
+  modelOptions: string[] = [];
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -123,17 +116,11 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
       this.settings.headers,
       "headers",
     );
-    const body = this.interpolateTemplate(this.settings.bodyTemplate, {
-      model: this.settings.model,
-      prompt: this.settings.prompt,
-      text: sourceText,
-    });
-
     const response = await requestUrl({
       url: this.settings.endpoint,
       method: this.settings.method || "POST",
       headers,
-      body: this.settings.method.toUpperCase() === "GET" ? undefined : body,
+      body: this.settings.method.toUpperCase() === "GET" ? undefined : this.buildRequestBody(sourceText),
     });
 
     if (response.status < 200 || response.status >= 300) {
@@ -145,13 +132,12 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
       return response.text.trim();
     }
 
-    const payload = response.json;
-    const value = this.readPath(payload, this.settings.responsePath.trim());
-    if (typeof value !== "string") {
-      throw new Error(`Response path "${this.settings.responsePath}" is not a string.`);
+    const translated = this.extractResponseText(response.json);
+    if (!translated) {
+      throw new Error("Could not extract translated text from the response.");
     }
 
-    return value.trim();
+    return translated.trim();
   }
 
   private parseJson<T>(value: string, fieldName: string): T {
@@ -163,19 +149,66 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
     }
   }
 
-  private interpolateTemplate(
-    template: string,
-    values: Record<string, string>,
-  ): string {
-    return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
-      return JSON.stringify(values[key] ?? "").slice(1, -1);
+  private buildRequestBody(sourceText: string): string {
+    if (!this.settings.model.trim()) {
+      throw new Error("Set a model before sending translation requests.");
+    }
+
+    if (this.settings.apiFormat === "ollama-generate") {
+      return JSON.stringify({
+        model: this.settings.model,
+        prompt: `${this.settings.prompt}\n\n${sourceText}`,
+        stream: false,
+      });
+    }
+
+    return JSON.stringify({
+      model: this.settings.model,
+      messages: [
+        {
+          role: "system",
+          content: this.settings.prompt,
+        },
+        {
+          role: "user",
+          content: sourceText,
+        },
+      ],
+      temperature: 0.2,
     });
+  }
+
+  private extractResponseText(payload: unknown): string | undefined {
+    if (this.settings.apiFormat === "ollama-generate") {
+      if (this.isRecord(payload) && typeof payload.response === "string") {
+        return payload.response;
+      }
+      return undefined;
+    }
+
+    if (!this.isRecord(payload) || !Array.isArray(payload.choices)) {
+      return undefined;
+    }
+
+    const firstChoice = payload.choices[0];
+    if (!this.isRecord(firstChoice) || !this.isRecord(firstChoice.message)) {
+      return undefined;
+    }
+
+    return typeof firstChoice.message.content === "string"
+      ? firstChoice.message.content
+      : undefined;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
   }
 
   applyPreset(name: PresetName): void {
     if (name === "ollama") {
       this.settings.endpoint = "http://127.0.0.1:11434/api/generate";
       this.settings.method = "POST";
+      this.settings.apiFormat = "ollama-generate";
       this.settings.model = "qwen2.5:7b";
       this.settings.prompt =
         "次の日本語テキストを自然な英語に翻訳してください。訳文だけを返してください。";
@@ -186,21 +219,13 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
         null,
         2,
       );
-      this.settings.bodyTemplate = JSON.stringify(
-        {
-          model: "{{model}}",
-          prompt: "{{prompt}}\n\n{{text}}",
-          stream: false,
-        },
-        null,
-        2,
-      );
-      this.settings.responsePath = "response";
+      this.modelOptions = [];
       return;
     }
 
     this.settings.endpoint = "http://127.0.0.1:1234/v1/chat/completions";
     this.settings.method = "POST";
+    this.settings.apiFormat = "openai-chat-completions";
     this.settings.model = "local-model";
     this.settings.prompt =
       "次の日本語テキストを自然な英語に翻訳してください。訳文だけを返してください。";
@@ -211,50 +236,88 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
       null,
       2,
     );
-    this.settings.bodyTemplate = JSON.stringify(
-      {
-        model: "{{model}}",
-        messages: [
-          {
-            role: "system",
-            content: "{{prompt}}",
-          },
-          {
-            role: "user",
-            content: "{{text}}",
-          },
-        ],
-        temperature: 0.2,
-      },
-      null,
-      2,
-    );
-    this.settings.responsePath = "choices.0.message.content";
+    this.modelOptions = [];
   }
 
-  private readPath(payload: unknown, path: string): unknown {
-    if (!path) {
-      return payload;
+  async refreshModels(): Promise<void> {
+    if (!this.settings.endpoint.trim()) {
+      throw new Error("Set the endpoint URL before loading models.");
     }
 
-    return path.split(".").reduce<unknown>((current, segment) => {
-      if (current === null || current === undefined) {
-        return undefined;
-      }
+    const headers = this.parseJson<Record<string, string>>(
+      this.settings.headers,
+      "headers",
+    );
+    const response = await requestUrl({
+      url: this.getModelsEndpoint(),
+      method: "GET",
+      headers,
+    });
 
-      const index = Number(segment);
-      if (Array.isArray(current) && Number.isInteger(index)) {
-        return current[index];
-      }
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`HTTP ${response.status}: ${response.text}`);
+    }
 
-      if (typeof current === "object" && segment in (current as Record<string, unknown>)) {
-        return (current as Record<string, unknown>)[segment];
-      }
+    this.modelOptions = this.extractModelOptions(response.json);
+    if (this.modelOptions.length === 0) {
+      throw new Error("No models were returned by the API.");
+    }
 
-      return undefined;
-    }, payload);
+    if (!this.modelOptions.includes(this.settings.model)) {
+      this.settings.model = this.modelOptions[0];
+      await this.saveSettings();
+    }
   }
 
+  private getModelsEndpoint(): string {
+    const endpoint = new URL(this.settings.endpoint);
+    if (this.settings.apiFormat === "ollama-generate") {
+      endpoint.pathname = endpoint.pathname.replace(/\/api\/(generate|chat)$/, "/api/tags");
+      return endpoint.toString();
+    }
+
+    endpoint.pathname = endpoint.pathname.replace(
+      /\/v\d+\/(chat\/completions|completions|responses)$/,
+      "/v1/models",
+    );
+    return endpoint.toString();
+  }
+
+  private extractModelOptions(payload: unknown): string[] {
+    if (this.settings.apiFormat === "ollama-generate") {
+      if (!this.isRecord(payload) || !Array.isArray(payload.models)) {
+        return [];
+      }
+
+      return payload.models
+        .map((model) => {
+          if (!this.isRecord(model)) {
+            return null;
+          }
+          if (typeof model.model === "string") {
+            return model.model;
+          }
+          if (typeof model.name === "string") {
+            return model.name;
+          }
+          return null;
+        })
+        .filter((model): model is string => Boolean(model));
+    }
+
+    if (!this.isRecord(payload) || !Array.isArray(payload.data)) {
+      return [];
+    }
+
+    return payload.data
+      .map((model) => {
+        if (!this.isRecord(model) || typeof model.id !== "string") {
+          return null;
+        }
+        return model.id;
+      })
+      .filter((model): model is string => Boolean(model));
+  }
 }
 
 class SelectAreaTranslaterSettingTab extends PluginSettingTab {
@@ -296,6 +359,7 @@ class SelectAreaTranslaterSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.endpoint)
           .onChange(async (value) => {
             this.plugin.settings.endpoint = value.trim();
+            this.plugin.modelOptions = [];
             await this.plugin.saveSettings();
           }),
       );
@@ -311,8 +375,53 @@ class SelectAreaTranslaterSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("API format")
+      .setDesc("How requests and model lists are interpreted.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("openai-chat-completions", "OpenAI-compatible")
+          .addOption("ollama-generate", "Ollama")
+          .setValue(this.plugin.settings.apiFormat)
+          .onChange(async (value: ApiFormat) => {
+            this.plugin.settings.apiFormat = value;
+            this.plugin.modelOptions = [];
+            await this.plugin.saveSettings();
+            this.display();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Model")
-      .setDesc("Template variable for {{model}}.")
+      .setDesc("Load available models from the API or enter one manually.")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Choose a loaded model");
+        for (const model of this.plugin.modelOptions) {
+          dropdown.addOption(model, model);
+        }
+
+        dropdown
+          .setValue(this.plugin.modelOptions.includes(this.plugin.settings.model) ? this.plugin.settings.model : "")
+          .onChange(async (value) => {
+            if (!value) {
+              return;
+            }
+            this.plugin.settings.model = value;
+            await this.plugin.saveSettings();
+            this.display();
+          });
+      })
+      .addButton((button) =>
+        button.setButtonText("Refresh").onClick(async () => {
+          try {
+            await this.plugin.refreshModels();
+            new Notice(`Loaded ${this.plugin.modelOptions.length} models.`);
+            this.display();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            new Notice(`Loading models failed: ${message}`);
+          }
+        }),
+      )
       .addText((text) =>
         text.setValue(this.plugin.settings.model).onChange(async (value) => {
           this.plugin.settings.model = value.trim();
@@ -332,30 +441,10 @@ class SelectAreaTranslaterSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Headers JSON")
-      .setDesc("Example: Authorization or Content-Type.")
+      .setDesc("Use this for API keys or custom headers.")
       .addTextArea((text) =>
         text.setValue(this.plugin.settings.headers).onChange(async (value) => {
           this.plugin.settings.headers = value;
-          await this.plugin.saveSettings();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Body template")
-      .setDesc("Use {{prompt}} and {{text}} placeholders.")
-      .addTextArea((text) =>
-        text.setValue(this.plugin.settings.bodyTemplate).onChange(async (value) => {
-          this.plugin.settings.bodyTemplate = value;
-          await this.plugin.saveSettings();
-        }),
-      );
-
-    new Setting(containerEl)
-      .setName("Response path")
-      .setDesc("Dot path for JSON responses, for example choices.0.message.content.")
-      .addText((text) =>
-        text.setValue(this.plugin.settings.responsePath).onChange(async (value) => {
-          this.plugin.settings.responsePath = value.trim();
           await this.plugin.saveSettings();
         }),
       );
