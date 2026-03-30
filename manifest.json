@@ -1,7 +1,7 @@
 {
   "id": "select-area-translater",
   "name": "Select Area Translater",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "description": "Translate selected text or a dragged editor region through a configurable endpoint and insert the result below.",
   "author": "Konboi",
