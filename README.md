@@ -142,7 +142,7 @@ This repository is configured for `tagpr`.
 - Merge commits into `main`
 - `tagpr` opens or updates a release PR from changes on `main`
 - Merging that PR creates a Git tag like `v0.2.0`
-- A release workflow builds the plugin and uploads these assets to the GitHub release:
+- The same `tagpr` workflow builds the plugin and uploads these assets to the GitHub release:
   - `manifest.json`
   - `main.js`
   - `styles.css`

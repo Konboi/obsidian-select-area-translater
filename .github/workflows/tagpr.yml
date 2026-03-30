@@ -24,6 +24,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: Songmu/tagpr@v1
+      - id: tagpr
+        uses: Songmu/tagpr@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        if: steps.tagpr.outputs.tag != ''
+        run: npm install
+      - name: Build plugin
+        if: steps.tagpr.outputs.tag != ''
+        run: npm run build
+      - name: Validate release version
+        if: steps.tagpr.outputs.tag != ''
+        run: node version-bump.mjs --check-tag=${{ steps.tagpr.outputs.tag }}
+      - name: Create release archive
+        if: steps.tagpr.outputs.tag != ''
+        run: |
+          mkdir -p release
+          cp manifest.json main.js styles.css release/
+          cd release
+          zip "${{ github.event.repository.name }}-${{ steps.tagpr.outputs.tag }}.zip" manifest.json main.js styles.css
+      - name: Upload release assets
+        if: steps.tagpr.outputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tagpr.outputs.tag }}
+          files: |
+            release/manifest.json
+            release/main.js
+            release/styles.css
+            release/${{ github.event.repository.name }}-${{ steps.tagpr.outputs.tag }}.zip
