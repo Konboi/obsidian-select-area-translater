@@ -18,17 +18,6 @@ interface SelectAreaTranslaterSettings {
   responsePath: string;
 }
 
-interface AreaSelection {
-  from: number;
-  to: number;
-  text: string;
-}
-
-interface CodeMirrorEditorLike {
-  posAtCoords(coords: { x: number; y: number }): number | null;
-  dom: HTMLElement;
-}
-
 const DEFAULT_SETTINGS: SelectAreaTranslaterSettings = {
   endpoint: "",
   method: "POST",
@@ -61,30 +50,15 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.addRibbonIcon("languages", "Translate dragged area", async () => {
-      await this.translateDraggedArea();
+    this.addRibbonIcon("languages", "Translate current selection", async () => {
+      await this.translateActiveSelection();
     });
 
     this.addCommand({
       id: "translate-current-selection",
       name: "Translate current editor selection",
-      editorCallback: async (editor) => {
-        const selectedText = editor.getSelection().trim();
-        if (!selectedText) {
-          new Notice("Translate target is empty.");
-          return;
-        }
-
-        const cursor = editor.getCursor("to");
-        await this.translateAndInsert(editor, selectedText, cursor.line + 1);
-      },
-    });
-
-    this.addCommand({
-      id: "translate-dragged-area",
-      name: "Translate dragged editor area",
       callback: async () => {
-        await this.translateDraggedArea();
+        await this.translateActiveSelection();
       },
     });
 
@@ -99,7 +73,7 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  private async translateDraggedArea(): Promise<void> {
+  private async translateActiveSelection(): Promise<void> {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
       new Notice("Open a Markdown editor first.");
@@ -107,20 +81,14 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
     }
 
     const editor = view.editor;
-    const cmEditor = this.getCodeMirrorEditor(editor);
-    if (!cmEditor) {
-      new Notice("Area selection is supported only in the Markdown editor.");
+    const selectedText = editor.getSelection().trim();
+    if (!selectedText) {
+      new Notice("Select text to translate first.");
       return;
     }
 
-    const selection = await this.captureAreaSelection(cmEditor, editor);
-    if (!selection || !selection.text.trim()) {
-      new Notice("No text found in the selected area.");
-      return;
-    }
-
-    const line = editor.offsetToPos(selection.to).line + 1;
-    await this.translateAndInsert(editor, selection.text.trim(), line);
+    const cursor = editor.getCursor("to");
+    await this.translateAndInsert(editor, selectedText, cursor.line + 1);
   }
 
   private async translateAndInsert(
@@ -287,112 +255,6 @@ export default class SelectAreaTranslaterPlugin extends Plugin {
     }, payload);
   }
 
-  private getCodeMirrorEditor(editor: MarkdownView["editor"]): CodeMirrorEditorLike | null {
-    const cmEditor = (editor as unknown as { cm?: CodeMirrorEditorLike }).cm;
-    if (!cmEditor?.dom || typeof cmEditor.posAtCoords !== "function") {
-      return null;
-    }
-
-    return cmEditor;
-  }
-
-  private captureAreaSelection(
-    cmEditor: CodeMirrorEditorLike,
-    editor: MarkdownView["editor"],
-  ): Promise<AreaSelection | null> {
-    return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.className = "select-area-translater-overlay";
-
-      const box = document.createElement("div");
-      box.className = "select-area-translater-box";
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-
-      let startX = 0;
-      let startY = 0;
-      let currentX = 0;
-      let currentY = 0;
-      let active = false;
-
-      const cleanup = (result: AreaSelection | null) => {
-        overlay.removeEventListener("pointerdown", onPointerDown);
-        overlay.removeEventListener("pointermove", onPointerMove);
-        overlay.removeEventListener("pointerup", onPointerUp);
-        overlay.removeEventListener("keydown", onKeyDown);
-        overlay.remove();
-        resolve(result);
-      };
-
-      const updateBox = () => {
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
-        box.style.left = `${left}px`;
-        box.style.top = `${top}px`;
-        box.style.width = `${width}px`;
-        box.style.height = `${height}px`;
-      };
-
-      const onPointerDown = (event: PointerEvent) => {
-        active = true;
-        startX = event.clientX;
-        startY = event.clientY;
-        currentX = event.clientX;
-        currentY = event.clientY;
-        updateBox();
-      };
-
-      const onPointerMove = (event: PointerEvent) => {
-        if (!active) {
-          return;
-        }
-
-        currentX = event.clientX;
-        currentY = event.clientY;
-        updateBox();
-      };
-
-      const onPointerUp = () => {
-        if (!active) {
-          cleanup(null);
-          return;
-        }
-
-        const left = Math.min(startX, currentX);
-        const right = Math.max(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const bottom = Math.max(startY, currentY);
-
-        const from = cmEditor.posAtCoords({ x: left, y: top });
-        const to = cmEditor.posAtCoords({ x: right, y: bottom });
-
-        if (from === null || to === null) {
-          cleanup(null);
-          return;
-        }
-
-        const start = Math.min(from, to);
-        const end = Math.max(from, to);
-        const text = editor.getRange(editor.offsetToPos(start), editor.offsetToPos(end));
-        cleanup({ from: start, to: end, text });
-      };
-
-      const onKeyDown = (event: KeyboardEvent) => {
-        if (event.key === "Escape") {
-          cleanup(null);
-        }
-      };
-
-      overlay.addEventListener("pointerdown", onPointerDown);
-      overlay.addEventListener("pointermove", onPointerMove);
-      overlay.addEventListener("pointerup", onPointerUp);
-      overlay.addEventListener("keydown", onKeyDown);
-      overlay.tabIndex = -1;
-      overlay.focus();
-    });
-  }
 }
 
 class SelectAreaTranslaterSettingTab extends PluginSettingTab {

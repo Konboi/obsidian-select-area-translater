@@ -30,30 +30,15 @@ class SelectAreaTranslaterPlugin extends obsidian.Plugin {
   async onload() {
     await this.loadSettings();
 
-    this.addRibbonIcon("languages", "Translate dragged area", async () => {
-      await this.translateDraggedArea();
+    this.addRibbonIcon("languages", "Translate current selection", async () => {
+      await this.translateActiveSelection();
     });
 
     this.addCommand({
       id: "translate-current-selection",
       name: "Translate current editor selection",
-      editorCallback: async (editor) => {
-        const selectedText = editor.getSelection().trim();
-        if (!selectedText) {
-          new obsidian.Notice("Translate target is empty.");
-          return;
-        }
-
-        const cursor = editor.getCursor("to");
-        await this.translateAndInsert(editor, selectedText, cursor.line + 1);
-      },
-    });
-
-    this.addCommand({
-      id: "translate-dragged-area",
-      name: "Translate dragged editor area",
       callback: async () => {
-        await this.translateDraggedArea();
+        await this.translateActiveSelection();
       },
     });
 
@@ -68,7 +53,7 @@ class SelectAreaTranslaterPlugin extends obsidian.Plugin {
     await this.saveData(this.settings);
   }
 
-  async translateDraggedArea() {
+  async translateActiveSelection() {
     const view = this.app.workspace.getActiveViewOfType(obsidian.MarkdownView);
     if (!view) {
       new obsidian.Notice("Open a Markdown editor first.");
@@ -76,20 +61,14 @@ class SelectAreaTranslaterPlugin extends obsidian.Plugin {
     }
 
     const editor = view.editor;
-    const cmEditor = this.getCodeMirrorEditor(editor);
-    if (!cmEditor) {
-      new obsidian.Notice("Area selection is supported only in the Markdown editor.");
+    const selectedText = editor.getSelection().trim();
+    if (!selectedText) {
+      new obsidian.Notice("Select text to translate first.");
       return;
     }
 
-    const selection = await this.captureAreaSelection(cmEditor, editor);
-    if (!selection || !selection.text.trim()) {
-      new obsidian.Notice("No text found in the selected area.");
-      return;
-    }
-
-    const line = editor.offsetToPos(selection.to).line + 1;
-    await this.translateAndInsert(editor, selection.text.trim(), line);
+    const cursor = editor.getCursor("to");
+    await this.translateAndInsert(editor, selectedText, cursor.line + 1);
   }
 
   async translateAndInsert(editor, sourceText, insertLine) {
@@ -250,109 +229,6 @@ class SelectAreaTranslaterPlugin extends obsidian.Plugin {
     }, payload);
   }
 
-  getCodeMirrorEditor(editor) {
-    const cmEditor = editor.cm;
-    if (!cmEditor || !cmEditor.dom || typeof cmEditor.posAtCoords !== "function") {
-      return null;
-    }
-
-    return cmEditor;
-  }
-
-  captureAreaSelection(cmEditor, editor) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.className = "select-area-translater-overlay";
-
-      const box = document.createElement("div");
-      box.className = "select-area-translater-box";
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-
-      let startX = 0;
-      let startY = 0;
-      let currentX = 0;
-      let currentY = 0;
-      let active = false;
-
-      const cleanup = (result) => {
-        overlay.removeEventListener("pointerdown", onPointerDown);
-        overlay.removeEventListener("pointermove", onPointerMove);
-        overlay.removeEventListener("pointerup", onPointerUp);
-        overlay.removeEventListener("keydown", onKeyDown);
-        overlay.remove();
-        resolve(result);
-      };
-
-      const updateBox = () => {
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
-        box.style.left = `${left}px`;
-        box.style.top = `${top}px`;
-        box.style.width = `${width}px`;
-        box.style.height = `${height}px`;
-      };
-
-      const onPointerDown = (event) => {
-        active = true;
-        startX = event.clientX;
-        startY = event.clientY;
-        currentX = event.clientX;
-        currentY = event.clientY;
-        updateBox();
-      };
-
-      const onPointerMove = (event) => {
-        if (!active) {
-          return;
-        }
-
-        currentX = event.clientX;
-        currentY = event.clientY;
-        updateBox();
-      };
-
-      const onPointerUp = () => {
-        if (!active) {
-          cleanup(null);
-          return;
-        }
-
-        const left = Math.min(startX, currentX);
-        const right = Math.max(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const bottom = Math.max(startY, currentY);
-
-        const from = cmEditor.posAtCoords({ x: left, y: top });
-        const to = cmEditor.posAtCoords({ x: right, y: bottom });
-
-        if (from === null || to === null) {
-          cleanup(null);
-          return;
-        }
-
-        const start = Math.min(from, to);
-        const end = Math.max(from, to);
-        const text = editor.getRange(editor.offsetToPos(start), editor.offsetToPos(end));
-        cleanup({ from: start, to: end, text });
-      };
-
-      const onKeyDown = (event) => {
-        if (event.key === "Escape") {
-          cleanup(null);
-        }
-      };
-
-      overlay.addEventListener("pointerdown", onPointerDown);
-      overlay.addEventListener("pointermove", onPointerMove);
-      overlay.addEventListener("pointerup", onPointerUp);
-      overlay.addEventListener("keydown", onKeyDown);
-      overlay.tabIndex = -1;
-      overlay.focus();
-    });
-  }
 }
 
 class SelectAreaTranslaterSettingTab extends obsidian.PluginSettingTab {

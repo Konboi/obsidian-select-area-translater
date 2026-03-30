@@ -1,23 +1,21 @@
 # Select Area Translater
 
-Obsidian plugin for translating selected text through a configurable HTTP endpoint and inserting the result below the selected area.
+Obsidian plugin for translating selected text through a configurable HTTP endpoint and inserting the result below the selected text.
 
 ## What It Does
 
 - Translate the current text selection in a Markdown editor
-- Drag over an area in the editor and translate the text covered by that region
 - Send the selected text plus a prompt to a configurable endpoint
 - Insert the translated result directly under the selected content
 - Configure presets for local LLM APIs such as Ollama and OpenAI-compatible servers
 
 ## Current Scope
 
-This plugin currently targets the Markdown editing view in Obsidian.
+This plugin currently targets text selections in the Markdown editing view in Obsidian.
 
 - Supported: Markdown editor selection
-- Supported: Dragged area selection in the editor
-- Not yet supported: Reading view area selection
-- Not yet supported: PDF area selection
+- Not yet supported: Reading view text selection
+- Not yet supported: PDF text selection
 
 ## Installation
 
@@ -35,7 +33,6 @@ This plugin currently targets the Markdown editing view in Obsidian.
 ## Commands
 
 - `Translate current editor selection`
-- `Translate dragged editor area`
 
 You can run them from the command palette.
 
@@ -111,7 +108,7 @@ Request body:
 ## Example Workflow
 
 1. Write text in Japanese in an Obsidian note.
-2. Select the text directly or use the dragged area command.
+2. Select the text you want to translate.
 3. The plugin sends the selected text and prompt to your configured local LLM endpoint.
 4. The translated text is inserted below the selected region.
 
@@ -124,7 +121,7 @@ Files:
 - `main.ts`: source implementation
 - `main.js`: distributable plugin entry
 - `manifest.json`: Obsidian plugin manifest
-- `styles.css`: overlay styles for dragged area selection
+- `styles.css`: plugin stylesheet
 
 ### Build
 
