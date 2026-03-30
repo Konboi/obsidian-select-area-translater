@@ -1,6 +1,6 @@
 {
   "name": "obsidian-select-area-translater",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Obsidian plugin to translate selected text or dragged editor regions via a configurable endpoint.",
   "main": "main.js",
   "scripts": {
