@@ -135,6 +135,36 @@ npm run build
 
 If your environment uses `mise`, make sure `node` and `npm` are available in `PATH`.
 
+## Release
+
+This repository is configured for `tagpr`.
+
+- Merge commits into `main`
+- `tagpr` opens or updates a release PR from changes on `main`
+- Merging that PR creates a Git tag like `v0.2.0`
+- A release workflow builds the plugin and uploads these assets to the GitHub release:
+  - `manifest.json`
+  - `main.js`
+  - `styles.css`
+  - `{repo-name}-{tag}.zip`
+
+### Required Repository Settings
+
+Enable GitHub Actions permission to create pull requests:
+
+- `Settings` -> `Actions` -> `General`
+- Turn on `Allow GitHub Actions to create and approve pull requests`
+
+### Version Bumps
+
+By default, `tagpr` will propose a patch release.
+
+If you want a minor or major bump, use one of these on the release PR:
+
+- Edit `package.json` version directly in the release PR
+- Add `tagpr:minor` for a minor bump
+- Add `tagpr:major` for a major bump
+
 ## Notes
 
 - The plugin uses Obsidian's `requestUrl` API for HTTP calls.

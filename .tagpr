@@ -1,0 +1,6 @@
+[tagpr]
+  versionFile = package.json
+  releaseBranch = main
+  vPrefix = true
+  changelog = false
+  postVersionCommand = npm run version-bump
